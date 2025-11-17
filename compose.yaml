@@ -1,0 +1,132 @@
+x-superset-volumes:
+  &superset-volumes # /app/pythonpath_docker will be appended to the PYTHONPATH in the final container
+  - ./docker:/app/docker
+  - ${ROOT_DIR}/data:/app/superset_home
+  - ${ROOT_DIR}/certs:/app/certs:ro
+
+services:
+  redis:
+    image: redis:7
+    user: ${UID}:${GID}
+    container_name: superset_cache
+    restart: unless-stopped
+    networks:
+      - default
+      - internal
+    volumes:
+      - ${ROOT_DIR}/redis:/data
+
+  db:
+    env_file:
+      - path: docker/.env # default
+        required: true
+      - path: ./local.env
+        required: false
+    image: postgres:18
+    user: ${UID}:${GID}
+    networks:
+      - default
+      - internal
+    container_name: superset_db
+    restart: unless-stopped
+    volumes:
+      - ${ROOT_DIR}/pg:/var/lib/postgresql/18/docker
+      - ./docker/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+
+  superset:
+    container_name: superset_app
+    image: gitea.tguan.xyz/okok-3/apache-superset:latest
+    restart: unless-stopped
+    user: ${UID}:${GID}
+    env_file:
+      - path: docker/.env # default
+        required: true
+      - path: ./local.env
+        required: false
+    volumes: *superset-volumes
+    # ports:
+    #   - 8088:8088
+    networks:
+      - caddy
+      - internal
+      - default
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    command: ["/app/docker/docker-bootstrap.sh", "app-gunicorn"]
+
+  superset-init:
+    container_name: superset_init
+    image: gitea.tguan.xyz/okok-3/apache-superset:latest
+    user: ${UID}:${GID}
+    env_file:
+      - path: docker/.env # default
+        required: true
+      - path: ./local.env
+        required: false
+    depends_on:
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+    volumes: *superset-volumes
+    networks:
+      - default
+      - internal
+    command: ["/app/docker/docker-init.sh"]
+    healthcheck:
+      disable: true
+
+  superset-worker:
+    container_name: superset_worker
+    image: gitea.tguan.xyz/okok-3/apache-superset:latest
+    restart: unless-stopped
+    user: ${UID}:${GID}
+    env_file:
+      - path: docker/.env # default
+        required: true
+      - path: ./local.env
+        required: false
+    networks:
+      - default
+      - internal
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    command: ["/app/docker/docker-bootstrap.sh", "worker"]
+    volumes: *superset-volumes
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME",
+        ]
+
+  superset-worker-beat:
+    container_name: superset_worker_beat
+    image: gitea.tguan.xyz/okok-3/apache-superset:latest
+    restart: unless-stopped
+    user: ${UID}:${GID}
+    env_file:
+      - path: docker/.env # default
+        required: true
+      - path: ./local.env
+        required: false
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - internal
+    volumes: *superset-volumes
+    command: ["/app/docker/docker-bootstrap.sh", "beat"]
+    healthcheck:
+      disable: true
+
+networks:
+  caddy:
+    name: caddy
+    external: true
+  internal:
+    name: internal
+    internal: true
