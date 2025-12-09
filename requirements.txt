@@ -1,7 +1,0 @@
-psycopg2-binary
-pymssql
-Authlib
-openpyxl
-Pillow
-playwright
-prophet
