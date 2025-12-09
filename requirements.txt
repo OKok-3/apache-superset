@@ -4,3 +4,4 @@ Authlib
 openpyxl
 Pillow
 playwright
+prophet
