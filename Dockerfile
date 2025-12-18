@@ -2,6 +2,9 @@ FROM apache/superset:6.0.0
 
 USER root
 
+# Update the package list and upgrade all packages
+RUN apt-get update
+
 # Set environment variable for Playwright
 ENV PLAYWRIGHT_BROWSERS_PATH=/usr/local/share/playwright-browsers
 
